@@ -1,0 +1,7 @@
+dataset_name: "kaggle"
+
+n_source_nodes: 160
+n_target_nodes: 268
+
+source_dir: "/vol/bitbucket/ps523/msc_project/MSc-project/data/lr_train.csv"
+target_dir: "/vol/bitbucket/ps523/msc_project/MSc-project/data/hr_train.csv"

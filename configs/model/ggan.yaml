@@ -1,0 +1,23 @@
+model_name: "ggan"
+
+generator:
+  lr: 0.025
+  beta1: 0.5
+  beta2: 0.999
+  
+  cached: True
+  bn_eps: 1e-03
+  bn_momentum: 0.1
+  bn_affine: True
+  bn_track_running_stats: True
+
+discriminator:
+  lr: 0.025
+  beta1: 0.5
+  beta2: 0.999
+
+  cached: True
+  bn_eps: 1e-03
+  bn_momentum: 0.1
+  bn_affine: True
+  bn_track_running_stats: True

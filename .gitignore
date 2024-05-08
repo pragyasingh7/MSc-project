@@ -1,3 +1,15 @@
+# Local folders
+results/
+wandb/
+outputs/
+
+# Local files
+local.ipynb
+run.sh
+
+**/__pycache__/
+*.pyc
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

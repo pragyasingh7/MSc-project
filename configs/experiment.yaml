@@ -1,0 +1,27 @@
+defaults:
+  - _self_
+  - dataset: kaggle
+  - model: ggan
+
+experiment:
+  n_epochs: 100
+  batch_size: 32  # TODO: Include batching in the trainer class
+  lr: 0.025
+
+  save_checkpoints: False
+  checkpoint_freq: 5
+  eval_freq: 5
+
+  kfold:
+    n_splits: 3
+    shuffle: True
+    random_state: 42
+
+  use_l1_loss: True
+  use_topo_metric_loss: True
+  use_pearson_loss: True
+
+wandb:
+  use_wandb: True
+  project: "MSc Project"
+  entity: "pragya-singh"

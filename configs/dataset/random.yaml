@@ -1,0 +1,6 @@
+dataset_name: "random"
+
+n_subjects: 3
+
+n_source_nodes: 5
+n_target_nodes: 8
