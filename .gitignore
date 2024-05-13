@@ -6,6 +6,7 @@ outputs/
 # Local files
 local.ipynb
 run.sh
+job_*.out
 
 **/__pycache__/
 *.pyc

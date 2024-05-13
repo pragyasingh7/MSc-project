@@ -4,13 +4,13 @@ defaults:
   - model: ggan
 
 experiment:
-  n_epochs: 100
+  n_epochs: 50
   batch_size: 32  # TODO: Include batching in the trainer class
   lr: 0.025
 
   save_checkpoints: False
   checkpoint_freq: 5
-  eval_freq: 5
+  eval_freq: 10
 
   kfold:
     n_splits: 3

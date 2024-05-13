@@ -22,19 +22,24 @@ class TopoMetricLoss(nn.Module):
     
     def forward(self, target, predicted, return_components=False):
         # Compute topological measures
-        cc_target, bc_target, ec_target = compute_topological_measures(target)
-        cc_pred, bc_pred, ec_pred = compute_topological_measures(predicted)
+        # cc_target, bc_target, ec_target = compute_topological_measures(target)
+        # cc_pred, bc_pred, ec_pred = compute_topological_measures(predicted)
+
+        ec_target = compute_topological_measures(target)
+        ec_pred = compute_topological_measures(predicted)
 
         # Compute topological loss
-        cc_loss = self.l1_loss(cc_target, cc_pred)
-        bc_loss = self.l1_loss(bc_target, bc_pred)
+        # cc_loss = self.l1_loss(cc_target, cc_pred)
+        # bc_loss = self.l1_loss(bc_target, bc_pred)
         ec_loss = self.l1_loss(ec_target, ec_pred)
 
         # Total loss
-        total_loss = cc_loss + bc_loss + ec_loss
+        # total_loss = cc_loss + bc_loss + ec_loss
+        total_loss = ec_loss
 
         if return_components:
-            return total_loss, cc_loss, bc_loss, ec_loss
+            # return total_loss, cc_loss, bc_loss, ec_loss
+            return total_loss, ec_loss
 
         return total_loss
 

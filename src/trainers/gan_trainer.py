@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from tqdm import tqdm
 from torch_geometric.data import Data
 
 from src.matrix_vectorizer import MatrixVectorizer
@@ -122,17 +123,30 @@ class GANTrainer:
             epoch_gen_topo_loss = []
             epoch_gen_pearson_loss = []
 
-            for source_graph, target_graph in zip(source_data, target_data):
+            # Discriminator predictions
+            real_dis_pred = []
+            fake_dis_pred = []
+
+            for source_graph, target_graph in tqdm(zip(source_data, target_data), desc=f"Training epoch {epoch}", total=len(source_data)):
                 source_graph = source_graph.to(self.device)
                 target_graph = target_graph.to(self.device)
 
                 # Generator output
-                gen_output = self.generator(source_graph).clone().detach()
+                gen_output = self.generator(source_graph)
                 gen_graph = create_pyg_graph(gen_output, self.n_target_nodes)
+
+                # print('Gen input shape: ', source_graph.x.shape)
+                # print('Gen output shape: ', gen_output.shape)
 
                 # Discriminator output
                 dis_real = self.discriminator(target_graph)
                 dis_fake = self.discriminator(gen_graph)
+
+                # print('Dis real:', dis_real.shape)
+                # print('Dis fake:', dis_fake.shape)
+
+                real_dis_pred.append(dis_real.item())
+                fake_dis_pred.append(dis_fake.item())
 
                 # Generator loss
                 gen_loss = self.adversarial_loss(dis_fake, torch.ones_like(dis_fake))
@@ -185,9 +199,14 @@ class GANTrainer:
                 epoch_gen_pearson_loss = torch.stack(epoch_gen_pearson_loss).mean()
                 self.logger.log_metric(epoch_gen_pearson_loss.item(), epoch, 'Gen Pearson correlation loss')
 
+            # Log discriminator predictions
+            self.logger.log_metric(np.mean(real_dis_pred), epoch, 'Discriminator prediction on real data')
+            self.logger.log_metric(np.mean(fake_dis_pred), epoch, 'Discriminator prediction on generated data')
+
             # Backpropagate generator loss
             self.generator_optimiser.zero_grad()                    
             epoch_gen_loss.backward(retain_graph=True)
+            # epoch_gen_loss.backward()
             self.generator_optimiser.step()
 
             # Log discriminator loss
@@ -195,7 +214,8 @@ class GANTrainer:
             
             # Backpropagate discriminator loss
             self.discriminator_optimiser.zero_grad()
-            epoch_dis_loss.backward(retain_graph=True)
+            # epoch_dis_loss.backward(retain_graph=True)
+            epoch_dis_loss.backward()
             self.discriminator_optimiser.step()
 
             # Report losses
@@ -227,9 +247,11 @@ class GANTrainer:
         l1_loss = self.l1_loss(target_data, predicted_data).item()
 
         # Topological losses
-        _, cc_loss, bc_loss, ec_loss = self.topo_loss(target_data, predicted_data, return_components=True)
+        # _, cc_loss, bc_loss, ec_loss = self.topo_loss(target_data, predicted_data, return_components=True)
+        _, ec_loss = self.topo_loss(target_data, predicted_data, return_components=True)
 
-        return l1_loss, cc_loss.item(), bc_loss.item(), ec_loss.item()
+        # return l1_loss, cc_loss.item(), bc_loss.item(), ec_loss.item()
+        return l1_loss, ec_loss.item()
         
     
     def eval(self, source_data, target_data, epoch):
@@ -243,23 +265,24 @@ class GANTrainer:
         target_graphs = []
 
         l1_losses = []
-        cc_losses = []
-        bc_losses = []
+        # cc_losses = []
+        # bc_losses = []
         ec_losses = []
 
         with torch.no_grad():
-            for source_graph, target_graph in zip(source_data, target_data):
+            for source_graph, target_graph in tqdm(zip(source_data, target_data), desc=f"Evaluating epoch {epoch}", total=len(source_data)):
                 # Generator output
                 source_graph = source_graph.to(self.device)
                 gen_output = self.generator(source_graph)
                 gen_outputs.append(gen_output.detach().cpu().numpy())
 
                 # Evaluation losses
-                l1_loss, cc_loss, bc_loss, ec_loss = self.calc_eval_losses(target_graph, gen_output)
+                # l1_loss, cc_loss, bc_loss, ec_loss = self.calc_eval_losses(target_graph, gen_output)
+                l1_loss, ec_loss = self.calc_eval_losses(target_graph, gen_output)
                 
                 l1_losses.append(l1_loss)
-                cc_losses.append(cc_loss)
-                bc_losses.append(bc_loss)
+                # cc_losses.append(cc_loss)
+                # bc_losses.append(bc_loss)
                 ec_losses.append(ec_loss)
 
                 # Log source and target graphs
@@ -268,17 +291,18 @@ class GANTrainer:
 
             # Calculate average losses for the epoch
             l1_losses = np.mean(l1_losses)
-            cc_losses = np.mean(cc_losses)
-            bc_losses = np.mean(bc_losses)
+            # cc_losses = np.mean(cc_losses)
+            # bc_losses = np.mean(bc_losses)
             ec_losses = np.mean(ec_losses)
 
             # Log epoch results
             self.logger.log_metric(l1_losses, epoch, 'Eval L1 loss')
-            self.logger.log_metric(cc_losses, epoch, 'Eval CC loss')
-            self.logger.log_metric(bc_losses, epoch, 'Eval BC loss')
+            # self.logger.log_metric(cc_losses, epoch, 'Eval CC loss')
+            # self.logger.log_metric(bc_losses, epoch, 'Eval BC loss')
             self.logger.log_metric(ec_losses, epoch, 'Eval EC loss')
 
-            print(f"Eval === L1 loss: {l1_losses:.3f} | CC loss: {cc_losses:.3f} | BC loss: {bc_losses:.3f} | EC loss: {ec_losses:.3f}")
+            # print(f"Eval === L1 loss: {l1_losses:.3f} | CC loss: {cc_losses:.3f} | BC loss: {bc_losses:.3f} | EC loss: {ec_losses:.3f}")
+            print(f"Eval === L1 loss: {l1_losses:.3f} | EC loss: {ec_losses:.3f}")
 
             return source_graphs, target_graphs, gen_outputs
     
@@ -289,6 +313,13 @@ class GANTrainer:
         """
         source_train_data, target_train_data = self.prepare_data(source_train_data, target_train_data)
         source_test_data, target_test_data = self.prepare_data(source_test_data, target_test_data)
+
+        # DEBUG: Only run on 10 graphs
+        # source_train_data = source_train_data[:10]
+        # target_train_data = target_train_data[:10]
+
+        # source_test_data = source_test_data[:10]
+        # target_test_data = target_test_data[:10]
 
         # To log training losses
         gen_losses = []

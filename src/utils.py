@@ -5,14 +5,10 @@ import networkx as nx
 import numpy as np
 
 
-@hydra.main(version_base="1.3.2", config_path="configs", config_name="experiment")
-def calc_n_nodes_f(config):
+def calc_n_nodes_f(n_source_nodes, n_target_nodes):
     """
     Calculate the number of edges in a fully connected graph.
     """
-    n_source_nodes = config.dataset.n_source_nodes
-    n_target_nodes = config.dataset.n_target_nodes
-
     n_source_nodes_f = int(n_source_nodes * (n_source_nodes - 1) / 2)
     n_target_nodes_f = int(n_target_nodes * (n_target_nodes - 1) / 2)
 
@@ -56,16 +52,17 @@ def compute_topological_measures(matrix):
     G = create_networkx_graph(matrix)
 
     # Compute closeness centrality
-    cc = nx.closeness_centrality(G, distance="weight")
-    cc = torch.tensor([cc[n] for n in G])
+    # cc = nx.closeness_centrality(G, distance="weight")
+    # cc = torch.tensor([cc[n] for n in G])
 
     # Compute betweenness centrality
-    bc = nx.betweenness_centrality(G, weight='weight')
-    bc = torch.tensor([bc[n] for n in G])
+    # bc = nx.betweenness_centrality(G, weight='weight')
+    # bc = torch.tensor([bc[n] for n in G])
 
     # Compute eigenvector centrality
     ec = nx.eigenvector_centrality_numpy(G)
     ec = torch.tensor([ec[n] for n in G])
 
-    return cc, bc, ec
+    # return cc, bc, ec
+    return ec
 
