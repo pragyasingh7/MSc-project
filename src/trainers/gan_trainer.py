@@ -1,4 +1,5 @@
 import torch
+import random
 import numpy as np
 from tqdm import tqdm
 from torch_geometric.data import Data
@@ -12,14 +13,22 @@ from src.losses import TopoMetricLoss, PearsonCorrelationLoss
 
 class GANTrainer:
     def __init__(self, config, exp_tag=''):
+        self.debug = config.experiment.debug
+
         self.n_source_nodes = config.dataset.n_source_nodes
         self.n_target_nodes = config.dataset.n_target_nodes
+        
         self.n_epochs = config.experiment.n_epochs
+        self.batch_size = config.experiment.batch_size
 
-        # Specify additional generator losses
+        # Specify additional generator losses and their weights
         self.use_l1_loss = config.experiment.use_l1_loss
         self.use_topo_metric_loss = config.experiment.use_topo_metric_loss
         self.use_pearson_loss = config.experiment.use_pearson_loss
+
+        self.l1_lambda = config.experiment.l1_lambda
+        self.topo_metric_lambda = config.experiment.topo_metric_lambda
+        self.pearson_lambda = config.experiment.pearson_lambda
 
         self.save_checkpoints = config.experiment.save_checkpoints
         self.checkpoint_freq = config.experiment.checkpoint_freq
@@ -85,7 +94,11 @@ class GANTrainer:
             self.discriminator.parameters(),
             lr=config.model.discriminator.lr,
             betas=(config.model.discriminator.beta1, config.model.discriminator.beta2)
-        )   
+        )  
+
+        # Define the labels for the real and fake data
+        self.real_label = config.model.discriminator.real_label
+        self.fake_label = config.model.discriminator.fake_label 
 
     
     def prepare_data(self, source_data, target_data):
@@ -113,6 +126,10 @@ class GANTrainer:
         self.generator.train()
         self.discriminator.train()
 
+        # Randomly shuffle the data
+        random.shuffle(source_data)
+        random.shuffle(target_data)
+
         with torch.autograd.set_detect_anomaly(True):
             epoch_gen_loss = []
             epoch_dis_loss = []
@@ -127,14 +144,18 @@ class GANTrainer:
             real_dis_pred = []
             fake_dis_pred = []
 
-            for source_graph, target_graph in tqdm(zip(source_data, target_data), desc=f"Training epoch {epoch}", total=len(source_data)):
+            # Batch level losses
+            batch_gen_loss = []
+            batch_dis_loss = []
+
+            for i, (source_graph, target_graph) in tqdm(enumerate(zip(source_data, target_data)), desc=f"Training epoch {epoch}", total=len(source_data)):
                 source_graph = source_graph.to(self.device)
                 target_graph = target_graph.to(self.device)
 
                 # Generator output
                 gen_output = self.generator(source_graph)
                 gen_graph = create_pyg_graph(gen_output, self.n_target_nodes)
-
+                
                 # print('Gen input shape: ', source_graph.x.shape)
                 # print('Gen output shape: ', gen_output.shape)
 
@@ -149,33 +170,55 @@ class GANTrainer:
                 fake_dis_pred.append(dis_fake.item())
 
                 # Generator loss
-                gen_loss = self.adversarial_loss(dis_fake, torch.ones_like(dis_fake))
+                gen_loss = self.adversarial_loss(dis_fake, torch.full_like(dis_fake, self.real_label))
                 epoch_gen_adv_loss.append(gen_loss.clone().detach())
                 
                 if self.use_l1_loss:
                     gen_l1 = self.l1_loss(gen_output, target_graph.x)
-                    gen_loss += gen_l1
+                    gen_loss += self.l1_lambda * gen_l1
                     epoch_gen_l1_loss.append(gen_l1)
 
                 if self.use_topo_metric_loss:
                     gen_topo_metric = self.topo_loss(gen_output, target_graph.x)
-                    gen_loss += gen_topo_metric
+                    gen_loss += self.topo_metric_lambda * gen_topo_metric
                     epoch_gen_topo_loss.append(gen_topo_metric)
 
                 if self.use_pearson_loss:
                     gen_pearson = self.pearson_loss(gen_output, target_graph.x)
-                    gen_loss += gen_pearson
+                    gen_loss += self.pearson_lambda * gen_pearson
                     epoch_gen_pearson_loss.append(gen_pearson)
 
-                # epoch_gen_loss.append(gen_loss.item())
-                epoch_gen_loss.append(gen_loss)
+                batch_gen_loss.append(gen_loss)
+                epoch_gen_loss.append(gen_loss.clone().detach())
 
                 # Discriminator loss
-                dis_real_loss = self.adversarial_loss(dis_real, torch.ones_like(dis_real))
-                dis_fake_loss = self.adversarial_loss(dis_fake, torch.zeros_like(dis_fake))
+                dis_real_loss = self.adversarial_loss(dis_real, torch.full_like(dis_real, self.real_label))
+                dis_fake_loss = self.adversarial_loss(dis_fake, torch.full_like(dis_fake, self.fake_label))
                 dis_loss = (dis_real_loss + dis_fake_loss) / 2
-                # epoch_dis_loss.append(dis_loss.item())
-                epoch_dis_loss.append(dis_loss)
+
+                batch_dis_loss.append(dis_loss)
+                epoch_dis_loss.append(dis_loss.clone().detach())
+
+                # === Trying batch-wise training ===
+                if (i + 1) % self.batch_size == 0 or i == len(source_data) - 1:    
+                    # Calculate losses for the complete epoch
+                    batch_gen_loss = torch.stack(batch_gen_loss).mean()
+                    batch_dis_loss = torch.stack(batch_dis_loss).mean()
+
+                    # Backpropagate generator loss
+                    self.generator_optimiser.zero_grad()                    
+                    batch_gen_loss.backward(retain_graph=True)
+                    self.generator_optimiser.step()
+
+                    # Backpropagate discriminator loss
+                    self.discriminator_optimiser.zero_grad()
+                    batch_dis_loss.backward(retain_graph=False)
+                    self.discriminator_optimiser.step()
+
+                    # Reset batch level losses
+                    batch_gen_loss = []
+                    batch_dis_loss = []
+
 
             # Calculate losses for the complete epoch
             epoch_gen_loss = torch.stack(epoch_gen_loss).mean()
@@ -200,26 +243,30 @@ class GANTrainer:
                 self.logger.log_metric(epoch_gen_pearson_loss.item(), epoch, 'Gen Pearson correlation loss')
 
             # Log discriminator predictions
-            self.logger.log_metric(np.mean(real_dis_pred), epoch, 'Discriminator prediction on real data')
-            self.logger.log_metric(np.mean(fake_dis_pred), epoch, 'Discriminator prediction on generated data')
+            real_dis_pred = np.mean(real_dis_pred)
+            fake_dis_pred = np.mean(fake_dis_pred)
 
-            # Backpropagate generator loss
-            self.generator_optimiser.zero_grad()                    
-            epoch_gen_loss.backward(retain_graph=True)
-            # epoch_gen_loss.backward()
-            self.generator_optimiser.step()
+            self.logger.log_metric(real_dis_pred, epoch, 'Discriminator prediction on real data')
+            self.logger.log_metric(fake_dis_pred, epoch, 'Discriminator prediction on generated data')
+
+            # # Backpropagate generator loss
+            # self.generator_optimiser.zero_grad()                    
+            # epoch_gen_loss.backward(retain_graph=True)
+            # self.generator_optimiser.step()
 
             # Log discriminator loss
             self.logger.log_metric(epoch_dis_loss.item(), epoch, 'Discriminator loss') 
             
-            # Backpropagate discriminator loss
-            self.discriminator_optimiser.zero_grad()
-            # epoch_dis_loss.backward(retain_graph=True)
-            epoch_dis_loss.backward()
-            self.discriminator_optimiser.step()
+            # # Backpropagate discriminator loss
+            # self.discriminator_optimiser.zero_grad()
+            # epoch_dis_loss.backward()
+            # self.discriminator_optimiser.step()
 
             # Report losses
             print(f"Train === Epoch: {epoch} | Generator loss: {epoch_gen_loss.item():.3f} | Discriminator loss: {epoch_dis_loss.item():.3f}")
+
+            # Report discriminator predictions
+            print(f"Train (Discriminator) === Real prob: {real_dis_pred:.3f} | Generated prob: {fake_dis_pred:.3f}")
 
             # Save checkpoints
             if self.save_checkpoints and epoch % self.checkpoint_freq == 0:
@@ -311,15 +358,9 @@ class GANTrainer:
         """
         Train the GAN model and report performance on test dataset.
         """
+        # Prepare data
         source_train_data, target_train_data = self.prepare_data(source_train_data, target_train_data)
         source_test_data, target_test_data = self.prepare_data(source_test_data, target_test_data)
-
-        # DEBUG: Only run on 10 graphs
-        # source_train_data = source_train_data[:10]
-        # target_train_data = target_train_data[:10]
-
-        # source_test_data = source_test_data[:10]
-        # target_test_data = target_test_data[:10]
 
         # To log training losses
         gen_losses = []

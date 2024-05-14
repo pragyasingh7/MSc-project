@@ -39,9 +39,19 @@ class Logger:
         wandb_config = {
             "exp_tag": self.exp_tag,
             "dataset": config.dataset.dataset_name,
+            "model": config.model.model_name,
             "n_epochs": config.experiment.n_epochs,
             "batch_size": config.experiment.batch_size,
+            "use_l1_loss": config.experiment.use_l1_loss,
+            "use_topo_metric_loss": config.experiment.use_topo_metric_loss,
+            "use_pearson_loss": config.experiment.use_pearson_loss,
         }
+
+        if config.model.model_name == 'ggan':
+            wandb_config = wandb_config | {
+                "real_label": config.model.real_label,
+                "fake_label": config.model.fake_label,
+            }
 
         self.wandb_run = wandb.init(
             project=config.wandb.project,

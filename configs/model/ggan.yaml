@@ -21,3 +21,7 @@ discriminator:
   bn_momentum: 0.1
   bn_affine: True
   bn_track_running_stats: True
+
+  # Labels for real and fake data
+  real_label: 0.9
+  fake_label: 0.1

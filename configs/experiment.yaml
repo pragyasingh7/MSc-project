@@ -4,8 +4,10 @@ defaults:
   - model: ggan
 
 experiment:
+  debug: False
+
   n_epochs: 50
-  batch_size: 32  # TODO: Include batching in the trainer class
+  batch_size: 16  # TODO: Include batching in the trainer class
   lr: 0.025
 
   save_checkpoints: False
@@ -13,13 +15,18 @@ experiment:
   eval_freq: 10
 
   kfold:
-    n_splits: 3
+    n_splits: 2
     shuffle: True
     random_state: 42
 
   use_l1_loss: True
-  use_topo_metric_loss: True
-  use_pearson_loss: True
+  l1_lambda: 100
+
+  use_topo_metric_loss: False
+  topo_metric_lambda: 100
+
+  use_pearson_loss: False
+  pearson_lambda: 100
 
 wandb:
   use_wandb: True

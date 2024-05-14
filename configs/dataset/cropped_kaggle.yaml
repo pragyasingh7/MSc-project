@@ -1,0 +1,11 @@
+dataset_name: "cropped_kaggle"
+
+n_target_nodes: 160
+
+n_source_nodes: 40
+
+scale: 4
+
+pooling_type: "max"
+
+target_dir: "/vol/bitbucket/ps523/msc_project/MSc-project/data/lr_train.csv"

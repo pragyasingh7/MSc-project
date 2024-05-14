@@ -18,12 +18,17 @@ def create_pyg_graph(x, n_nodes):
     """
     Create a PyTorch Geometric graph data object from given adjacency matrix.
     """
-    edge_attr = torch.tensor(x, dtype=torch.float).view(-1, 1)
+    if isinstance(x, torch.Tensor):
+        edge_attr = x.clone().detach().view(-1, 1)
+        node_feat = x.clone().detach()
+    else:
+        edge_attr = torch.tensor(x, dtype=torch.float).view(-1, 1)
+        node_feat = torch.tensor(x, dtype=torch.float)
 
     rows, cols = torch.meshgrid(torch.arange(n_nodes), torch.arange(n_nodes), indexing='ij')
     pos_edge_index = torch.stack([rows.flatten(), cols.flatten()], dim=0)
 
-    pyg_graph = Data(x=torch.tensor(x, dtype=torch.float), pos_edge_index=pos_edge_index, edge_attr=edge_attr)
+    pyg_graph = Data(x=node_feat, pos_edge_index=pos_edge_index, edge_attr=edge_attr)
     
     return pyg_graph
 
@@ -65,4 +70,22 @@ def compute_topological_measures(matrix):
 
     # return cc, bc, ec
     return ec
+
+def get_LR_from_HR(hr_matrix_list, scale=4, pooling_type='mean'):
+    """
+    Get LR matrix from HR matrix.
+    """
+    hr_matrix_list = [torch.tensor(hr_matrix) for hr_matrix in hr_matrix_list]
+    hr_matrix = torch.stack(hr_matrix_list, dim=0)
+
+    if pooling_type == 'mean':
+        pool_operator = torch.nn.AvgPool2d(kernel_size=scale, stride=scale)
+    elif pooling_type == 'max':
+        pool_operator = torch.nn.MaxPool2d(kernel_size=scale, stride=scale)
+    else:
+        raise ValueError(f"Pooling type {pooling_type} not supported.")
+    
+    lr_matrix = pool_operator(hr_matrix)
+
+    return lr_matrix.numpy()
 

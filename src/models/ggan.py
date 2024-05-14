@@ -18,49 +18,70 @@ class GCNGenerator(nn.Module):
     ):
         super().__init__()
        
-        self.conv21 = GCNConv(n_source_nodes, 2 * n_target_nodes, cached=cached)
-        self.conv211 = BatchNorm(2 * n_target_nodes, 
+        self.conv11 = GCNConv(n_source_nodes, 2 * n_target_nodes, cached=cached)
+        self.conv12 = BatchNorm(2 * n_target_nodes, 
                                 eps=bn_eps, 
                                 momentum=bn_momentum, 
                                 affine=bn_affine, 
                                 track_running_stats=bn_track_running_stats)
-        self.conv22 = GCNConv(2 * n_target_nodes, n_target_nodes, cached=cached)
-        self.conv222 = BatchNorm(n_target_nodes, 
+
+        self.conv21 = GCNConv(2 * n_target_nodes, 4 * n_target_nodes, cached=cached)
+        self.conv22 = BatchNorm(4 * n_target_nodes, 
                                 eps=bn_eps, 
                                 momentum=bn_momentum, 
                                 affine=bn_affine, 
                                 track_running_stats=bn_track_running_stats)
-        self.conv23 = GCNConv(n_target_nodes, n_target_nodes, cached=cached)
-      
+
+        self.conv31 = GCNConv(4 * n_target_nodes, 2 * n_target_nodes, cached=cached)
+        self.conv32 = BatchNorm(2 * n_target_nodes, 
+                                eps=bn_eps, 
+                                momentum=bn_momentum, 
+                                affine=bn_affine, 
+                                track_running_stats=bn_track_running_stats)
+
+        self.conv41 = GCNConv(2 * n_target_nodes, n_target_nodes, cached=cached)
+        self.conv42 = BatchNorm(n_target_nodes, 
+                                eps=bn_eps, 
+                                momentum=bn_momentum, 
+                                affine=bn_affine, 
+                                track_running_stats=bn_track_running_stats)
+        
+        self.conv51 = GCNConv(n_target_nodes, n_target_nodes, cached=cached)
+
+
+    def enforce_priors(self, x):
+        # Ensure symmetry
+        x1 = (x + x.t()) / 2
+
+        # Ensure no self-loops
+        x2 = x1 - torch.diag(torch.diag(x1))
+
+        return x2
 
     def forward(self, data):
         x, edge_index, edge_attr = data.x, data.pos_edge_index, data.edge_attr
         # x = torch.squeeze(x)
 
-        x1 = F.sigmoid(self.conv211(self.conv21(x, edge_index, edge_attr)))
-        x1 = F.dropout(x1, training=self.training)
+        x1 = F.sigmoid(self.conv12(self.conv11(x, edge_index, edge_attr)))
+        x2 = F.dropout(x1, training=self.training)
 
-        x2 = F.sigmoid(self.conv222(self.conv22(x1, edge_index, edge_attr)))
-        x2 = F.dropout(x2, training=self.training)
+        x3 = F.sigmoid(self.conv22(self.conv21(x2, edge_index, edge_attr)))
+        x4 = F.dropout(x3, training=self.training)
 
-        x3 = F.sigmoid(self.conv23(x2, edge_index, edge_attr))
-        x3 = F.dropout(x3, training=self.training)
+        x5 = F.sigmoid(self.conv32(self.conv31(x4, edge_index, edge_attr)))
+        x6 = F.dropout(x5, training=self.training)
 
-        x4  = torch.matmul(x3.t(), x3)
+        x7 = F.sigmoid(self.conv42(self.conv41(x6, edge_index, edge_attr)))
+        x8 = F.dropout(x7, training=self.training)
 
-        return x4
+        x9 = F.sigmoid(self.conv51(x8, edge_index, edge_attr))
+        x10 = F.dropout(x9, training=self.training)
 
-        # x = self.conv21(x, edge_index).relu()
-        # x1 = F.sigmoid(self.conv211(x))
-        # x1 = F.dropout(x1, training=self.training)
-       
-        # x2 = self.conv22(x1, edge_index).relu()
-        # x2 = F.sigmoid(self.conv222(x2))
-        # x2 = F.dropout(x2, training=self.training)
-       
-        # x3  = (torch.matmul(x2.t(), x2)) 
+        x11  = torch.matmul(x10.t(), x10)
 
-        # return x3
+        x12 = self.enforce_priors(x11)
+
+        return x12
 
 
 class GCNDiscriminator(torch.nn.Module):
@@ -76,18 +97,13 @@ class GCNDiscriminator(torch.nn.Module):
     ):
         super().__init__()
         
-        self.conv21 = GCNConv(n_target_nodes, n_target_nodes, cached=cached)
-        # self.conv211 = BatchNorm(n_target_nodes, 
+        self.conv1 = GCNConv(n_target_nodes, n_target_nodes, cached=cached)
+        # self.conv11 = BatchNorm(2 * n_target_nodes, 
         #                         eps=bn_eps, 
         #                         momentum=bn_momentum, 
         #                         affine=bn_affine, 
         #                         track_running_stats=bn_track_running_stats)
-        self.conv22 = GCNConv(n_target_nodes, n_target_nodes, cached=cached)
-        # self.conv222 = BatchNorm(1, 
-        #                         eps=bn_eps, 
-        #                         momentum=bn_momentum, 
-        #                         affine=bn_affine, 
-        #                         track_running_stats=bn_track_running_stats)
+        # self.conv2 = GCNConv(n_target_nodes, n_target_nodes, cached=cached)
         self.nn = nn.Linear(n_target_nodes, 1)
 
 
@@ -96,20 +112,15 @@ class GCNDiscriminator(torch.nn.Module):
 
         # x = torch.squeeze(x)
 
-        x1 = F.sigmoid(self.conv21(x, edge_index))
-        x1 = F.dropout(x1, training=self.training)
-        x2 = F.sigmoid(self.conv22(x1, edge_index))
+        # x1 = F.sigmoid(self.conv11(self.conv1(x, edge_index)))
+        x1 = F.sigmoid(self.conv1(x, edge_index))
+        x2 = F.dropout(x1, training=self.training)
+
+        # x2 = F.sigmoid(self.conv2(x1, edge_index))
 
         # Do graph-level prediction
         x3 = torch.mean(x2, dim=0)  # Global mean pooling
-        x3 = F.sigmoid(self.nn(x3))
+        x4 = F.sigmoid(self.nn(x3))
 
-        return x3
+        return x4
 
-        # x = self.conv21(x, edge_index).relu()
-        # x = self.conv211(x)
-        # x = F.relu(x)
-        # x = F.dropout(x, training=self.training)
-        # x1 = F.relu(self.conv222(self.conv22(x, edge_index)))
-
-        # return F.sigmoid(x1)
